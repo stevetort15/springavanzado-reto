@@ -1,0 +1,35 @@
+# Busca secretos (claves, tokens, contraseñas) en los commits NUEVOS de cada push y PR.
+# Los repos privados de una cuenta personal no tienen GitHub secret scanning; este workflow lo suple.
+# Solo escanea el rango nuevo, así que no se pone en rojo por secretos del historial viejo.
+# Imprime la regla y el archivo, nunca el valor (--redact). Si falla: quita el secreto, ROTA la clave
+# y reescribe el commit; borrar el archivo en un commit posterior no basta, queda en el historial.
+name: Secretos
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Instalar gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tgz gitleaks
+      - name: Escanear commits nuevos
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="-1 ${{ github.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          ./gitleaks git . --redact --no-banner -v --log-opts="$RANGE"
